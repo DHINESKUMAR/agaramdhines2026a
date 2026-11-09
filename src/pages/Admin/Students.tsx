@@ -8,13 +8,14 @@ import {
   Printer, X, QrCode, Download, FileText, Copy, Check, User, LayoutGrid, List, Search, Eye, Edit, Trash2, 
   ArrowLeft, BookOpen, ShieldCheck, ShieldAlert, RefreshCw, UserPlus, Users, Upload, Key, CheckCircle2, 
   AlertTriangle, AlertCircle, Sparkles, Phone, MapPin, Calendar, Lock, GraduationCap, School, Shield, Image as ImageIcon, 
-  CheckSquare, Square, Info, ChevronRight, Hash, Trash, CheckCircle, Share2, MessageSquare
+  CheckSquare, Square, Info, ChevronRight, Hash, Trash, CheckCircle, Share2, MessageSquare, CreditCard
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { toPng } from "html-to-image";
 import jsPDF from "jspdf";
 import autoTable from 'jspdf-autotable';
 import { matchesPhoneSearch, checkObjectMatchesPhone, normalizePhone } from "../../lib/phoneUtils";
+import StudentIdCardA4 from "../../components/StudentIdCardA4";
 
 export default function Students() {
   const [view, setView] = useState<"menu" | "add" | "view" | "import" | "edit" | "view-id-pin">("menu");
@@ -38,6 +39,54 @@ export default function Students() {
   const [copiedTextToast, setCopiedTextToast] = useState(false);
   const [downloadingLiveCard, setDownloadingLiveCard] = useState(false);
   const [copyingLiveCard, setCopyingLiveCard] = useState(false);
+  const [showBulkIdModal, setShowBulkIdModal] = useState(false);
+  const [isGeneratingBulkIdPdf, setIsGeneratingBulkIdPdf] = useState(false);
+
+  // Chunk array into groups of 8 for A4 portrait sheets (2 columns x 4 rows)
+  const chunkIntoEights = (arr: any[]) => {
+    const chunks: any[][] = [];
+    for (let i = 0; i < arr.length; i += 8) {
+      chunks.push(arr.slice(i, i + 8));
+    }
+    return chunks;
+  };
+
+  const handleDownloadBulkIdPDF = async () => {
+    const container = document.getElementById("printable-bulk-idcards-students");
+    if (!container) return;
+
+    try {
+      setIsGeneratingBulkIdPdf(true);
+      const sheets = container.querySelectorAll(".a4-idcard-sheet");
+      if (sheets.length === 0) return;
+
+      const pdf = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4"
+      });
+
+      for (let i = 0; i < sheets.length; i++) {
+        const sheet = sheets[i] as HTMLElement;
+        if (i > 0) pdf.addPage("a4", "portrait");
+
+        const dataUrl = await toPng(sheet, {
+          quality: 0.98,
+          pixelRatio: 2.5,
+          backgroundColor: "#ffffff"
+        });
+
+        pdf.addImage(dataUrl, "PNG", 0, 0, 210, 297, undefined, "FAST");
+      }
+
+      pdf.save(`Agaram_Student_ID_Cards_A4_${new Date().toISOString().split("T")[0]}.pdf`);
+    } catch (err: any) {
+      console.error("Error generating bulk A4 ID cards PDF:", err);
+      alert("A4 PDF பதிவிறக்கத்தில் பிழை: " + (err?.message || err));
+    } finally {
+      setIsGeneratingBulkIdPdf(false);
+    }
+  };
 
   const checkStudentMatchesSearch = (s: any, queryStr: string) => {
     if (!queryStr || !queryStr.trim()) return true;
@@ -3250,6 +3299,14 @@ ${videoZoomUrl}
 
           <div className="flex items-center gap-2 flex-wrap">
             <button
+              onClick={() => setShowBulkIdModal(true)}
+              disabled={filteredStudents.length === 0}
+              className="bg-indigo-600 text-white rounded-xl px-3.5 py-2 text-xs font-bold whitespace-nowrap hover:bg-indigo-700 flex items-center gap-1.5 shadow-sm transition-all cursor-pointer disabled:opacity-50"
+              title="A4 போர்ட்ரைட்டில் 8 அடையாள அட்டைகள் பல்க் அச்சிட அல்லது PDF சேமிக்க"
+            >
+              <CreditCard size={15} /> A4 ID Cards (8/Sheet)
+            </button>
+            <button
               onClick={handleExportCSV}
               className="bg-emerald-600 text-white rounded-xl px-3.5 py-2 text-xs font-bold whitespace-nowrap hover:bg-emerald-700 flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
               title="Export CSV (Excel)"
@@ -3385,6 +3442,139 @@ ${videoZoomUrl}
             </table>
           </div>
         </div>
+
+        {/* Print Styles for 8-per-A4 Portrait Sheet in Students view */}
+        <style>{`
+          @media print {
+            body * {
+              visibility: hidden;
+            }
+            #printable-bulk-idcards-students, #printable-bulk-idcards-students * {
+              visibility: visible;
+            }
+            #printable-bulk-idcards-students {
+              position: absolute;
+              left: 0;
+              top: 0;
+              width: 210mm !important;
+              display: block !important;
+              background: #fff;
+            }
+            .a4-idcard-sheet {
+              width: 210mm !important;
+              min-width: 210mm !important;
+              max-width: 210mm !important;
+              height: 297mm !important;
+              min-height: 297mm !important;
+              max-height: 297mm !important;
+              page-break-after: always !important;
+              page-break-inside: avoid !important;
+              box-sizing: border-box !important;
+              padding: 9mm 8mm !important;
+              display: grid !important;
+              grid-template-columns: 94mm 94mm !important;
+              grid-template-rows: 66mm 66mm 66mm 66mm !important;
+              gap: 5mm 6mm !important;
+              position: relative !important;
+              background: #fff !important;
+              overflow: hidden !important;
+            }
+            @page {
+              size: 210mm 297mm portrait;
+              margin: 0;
+            }
+          }
+        `}</style>
+
+        {/* Printable Bulk 8-per-A4 Portrait ID Cards Modal */}
+        {showBulkIdModal && (
+          <div className="fixed inset-0 z-50 bg-slate-900/90 backdrop-blur-md flex flex-col items-center p-2 sm:p-4 overflow-y-auto">
+            {/* Sticky Toolbar */}
+            <div className="sticky top-2 z-50 bg-slate-900 text-white border border-slate-700 px-5 py-3 rounded-2xl shadow-2xl flex items-center justify-between gap-4 w-full max-w-4xl mb-4">
+              <div>
+                <h3 className="text-sm sm:text-base font-black flex items-center gap-2">
+                  <CreditCard size={18} className="text-amber-400" />
+                  A4 போர்ட்ரைட்டில் 8 ID கார்டுகள் பல்க் அச்சிடுதல் (8-Per-A4 Portrait)
+                </h3>
+                <p className="text-[11px] text-slate-300">
+                  மொத்தம் {filteredStudents.length} மாணவர்கள் ({chunkIntoEights(filteredStudents).length} A4 தாள்கள் - ஒரு A4 தாளில் 8 ID கார்டுகள்).
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleDownloadBulkIdPDF}
+                  disabled={isGeneratingBulkIdPdf || filteredStudents.length === 0}
+                  className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-black px-4 py-2.5 rounded-xl text-xs transition-all shadow-lg shadow-blue-600/30 cursor-pointer"
+                  title="A4 பக்கங்களை உயர்தர PDF கோப்பாகப் பதிவிறக்க"
+                >
+                  <Download size={16} />
+                  {isGeneratingBulkIdPdf ? "PDF உருவாகிறது..." : "A4 PDF பதிவிறக்கு (Download PDF)"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black px-5 py-2.5 rounded-xl text-xs transition-all shadow-lg shadow-emerald-600/30 cursor-pointer"
+                >
+                  <Printer size={16} />
+                  அச்சிடுக / Print
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowBulkIdModal(false)}
+                  className="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white p-2 rounded-xl cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Printable Container for 8-per-A4 Grid */}
+            <div className="w-full overflow-x-auto flex flex-col items-center pb-12">
+              <div id="printable-bulk-idcards-students" className="space-y-8">
+                {chunkIntoEights(filteredStudents).map((pageGroup, pageIndex) => (
+                  <div 
+                    key={pageIndex}
+                    className="a4-idcard-sheet bg-white border border-slate-300 rounded-none shadow-xl mx-auto relative overflow-hidden"
+                    style={{
+                      width: "210mm",
+                      minWidth: "210mm",
+                      maxWidth: "210mm",
+                      height: "297mm",
+                      minHeight: "297mm",
+                      maxHeight: "297mm",
+                      padding: "9mm 8mm",
+                      display: "grid",
+                      gridTemplateColumns: "94mm 94mm",
+                      gridTemplateRows: "66mm 66mm 66mm 66mm",
+                      gap: "5mm 6mm",
+                      overflow: "hidden",
+                      boxSizing: "border-box",
+                      backgroundColor: "#ffffff"
+                    }}
+                  >
+                    {pageGroup.map((studentItem) => (
+                      <div 
+                        key={studentItem.id} 
+                        className="w-[94mm] h-[66mm] max-w-[94mm] max-h-[66mm] min-h-0 min-w-0 flex items-center justify-center overflow-hidden"
+                        style={{ width: "94mm", height: "66mm", maxHeight: "66mm", boxSizing: "border-box" }}
+                      >
+                        <StudentIdCardA4 
+                          student={studentItem} 
+                          adminSettings={adminSettings}
+                          selectedSubject={filterSubject}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

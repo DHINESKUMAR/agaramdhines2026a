@@ -1,17 +1,24 @@
-import React, { useState, useEffect, useRef } from "react";
-import { getStudents, getClasses, getAdminSettings } from "../../lib/db";
-import { Printer, CheckSquare, Square, Search, Award, FileText, CreditCard, User } from "lucide-react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
+import { getStudents, getClasses, getAdminSettings, getSubjects } from "../../lib/db";
+import { Printer, CheckSquare, Square, Search, Award, FileText, CreditCard, User, Download, X, Layers, Sparkles, BookOpen } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
+import { toPng } from "html-to-image";
+import jsPDF from "jspdf";
 import { checkObjectMatchesPhone } from "../../lib/phoneUtils";
+import StudentIdCardA4 from "../../components/StudentIdCardA4";
 
 export default function BulkDocuments() {
   const [students, setStudents] = useState<any[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
+  const [allSubjects, setAllSubjects] = useState<any[]>([]);
   const [adminSettings, setAdminSettings] = useState<any>(null);
   const [selectedGrade, setSelectedGrade] = useState("");
+  const [selectedSubject, setSelectedSubject] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [showBulkIdModal, setShowBulkIdModal] = useState(false);
   
   const printRef = useRef<HTMLDivElement>(null);
   const [printMode, setPrintMode] = useState<'idcard' | 'certificate' | null>(null);
@@ -20,17 +27,54 @@ export default function BulkDocuments() {
     getStudents().then(data => setStudents(data || []));
     getClasses().then(data => setClasses(data || []));
     getAdminSettings().then(data => setAdminSettings(data));
+    getSubjects().then(data => setAllSubjects(data || []));
   }, []);
+
+  // Compute available unique subjects from students, classes, and DB
+  const availableSubjects = useMemo(() => {
+    const set = new Set<string>();
+    students.forEach(s => {
+      const subs = s.subjects || s.enrolledClasses || [];
+      if (Array.isArray(subs)) {
+        subs.forEach((sub: any) => {
+          const clean = typeof sub === 'string' ? sub.trim() : (sub?.name || '');
+          if (clean) set.add(clean);
+        });
+      }
+    });
+    classes.forEach(c => {
+      if (Array.isArray(c.subjects)) {
+        c.subjects.forEach((sub: any) => {
+          const clean = typeof sub === 'string' ? sub.trim() : (sub?.name || '');
+          if (clean) set.add(clean);
+        });
+      }
+    });
+    allSubjects.forEach(s => {
+      const clean = typeof s === 'string' ? s.trim() : (s?.name || '');
+      if (clean) set.add(clean);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [students, classes, allSubjects]);
 
   const filteredStudents = students.filter(s => {
     const matchesGrade = selectedGrade ? s.grade === selectedGrade : true;
+
+    const studentSubs = (s.subjects || s.enrolledClasses || []).map((sub: any) => 
+      (typeof sub === 'string' ? sub : sub?.name || '')?.toString().trim().toLowerCase()
+    );
+    const matchesSubject = !selectedSubject || selectedSubject === "ALL"
+      ? true
+      : studentSubs.some((sub: string) => sub === selectedSubject.toLowerCase().trim());
+
     const matchesSearch = searchQuery 
       ? s.name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
         s.id?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         s.rollNo?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         checkObjectMatchesPhone(s, searchQuery)
       : true;
-    return matchesGrade && matchesSearch;
+
+    return matchesGrade && matchesSubject && matchesSearch;
   });
 
   const handleSelectAll = () => {
@@ -51,7 +95,67 @@ export default function BulkDocuments() {
     setSelectedIds(newSet);
   };
 
+  // Chunk array into groups of 8 for A4 portrait sheets (2 columns x 4 rows)
+  const chunkIntoEights = (arr: any[]) => {
+    const chunks: any[][] = [];
+    for (let i = 0; i < arr.length; i += 8) {
+      chunks.push(arr.slice(i, i + 8));
+    }
+    return chunks;
+  };
+
+  const selectedStudentsData = students.filter(s => selectedIds.has(s.id));
+  const idCardPrintItems = selectedStudentsData.length > 0 ? selectedStudentsData : filteredStudents;
+  const a4Pages = chunkIntoEights(idCardPrintItems);
+
+  // Download Bulk 8-per-A4 ID Card Sheets as PDF
+  const handleDownloadA4PDF = async () => {
+    const container = document.getElementById("printable-bulk-idcards");
+    if (!container) return;
+
+    try {
+      setIsGeneratingPdf(true);
+      const sheets = container.querySelectorAll(".a4-idcard-sheet");
+      if (sheets.length === 0) return;
+
+      const pdf = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4"
+      });
+
+      for (let i = 0; i < sheets.length; i++) {
+        const sheet = sheets[i] as HTMLElement;
+        if (i > 0) pdf.addPage("a4", "portrait");
+
+        const dataUrl = await toPng(sheet, {
+          quality: 0.98,
+          pixelRatio: 2.5,
+          backgroundColor: "#ffffff"
+        });
+
+        pdf.addImage(dataUrl, "PNG", 0, 0, 210, 297, undefined, "FAST");
+      }
+
+      pdf.save(`Agaram_Student_ID_Cards_A4_${new Date().toISOString().split("T")[0]}.pdf`);
+    } catch (err: any) {
+      console.error("Error generating bulk A4 ID cards PDF:", err);
+      alert("A4 PDF பதிவிறக்கத்தில் பிழை: " + (err?.message || err));
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
+
+  const handlePrintA4Sheets = () => {
+    window.print();
+  };
+
   const handlePrint = (mode: 'idcard' | 'certificate') => {
+    if (mode === 'idcard') {
+      setShowBulkIdModal(true);
+      return;
+    }
+
     if (selectedIds.size === 0) {
       alert("Please select at least one student.");
       return;
@@ -68,7 +172,6 @@ export default function BulkDocuments() {
         return;
       }
 
-      // Instead of window.open, use a hidden iframe to avoid popup blockers in Electron/Nativefier
       let printIframe = document.getElementById('bulk-print-iframe') as HTMLIFrameElement;
       if (!printIframe) {
         printIframe = document.createElement('iframe');
@@ -87,14 +190,13 @@ export default function BulkDocuments() {
         printDoc.write(`
           <html>
             <head>
-              <title>Bulk Print ${mode === 'idcard' ? 'ID Cards' : 'Certificates'}</title>
+              <title>Bulk Print Certificates</title>
               <script src="https://cdn.tailwindcss.com"></script>
               <style>
                 @media print {
                   .page-break { page-break-after: always; }
                   body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
                 }
-                .id-grid { display: flex; flex-wrap: wrap; gap: 20px; justify-content: center; }
                 .cert-container { display: flex; flex-direction: column; align-items: center; gap: 40px; }
               </style>
             </head>
@@ -105,7 +207,6 @@ export default function BulkDocuments() {
         `);
         printDoc.close();
         
-        // Wait for Tailwind scripts to inject styles before printing
         setTimeout(() => {
           printIframe.contentWindow?.focus();
           printIframe.contentWindow?.print();
@@ -120,40 +221,88 @@ export default function BulkDocuments() {
     }, 500);
   };
 
-  const selectedStudentsData = students.filter(s => selectedIds.has(s.id));
-
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+    <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
+      {/* Print Styles for 8-per-A4 Portrait Sheet */}
+      <style>{`
+        @media print {
+          body * {
+            visibility: hidden;
+          }
+          #printable-bulk-idcards, #printable-bulk-idcards * {
+            visibility: visible;
+          }
+          #printable-bulk-idcards {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 210mm !important;
+            display: block !important;
+            background: #fff;
+          }
+          .a4-idcard-sheet {
+            width: 210mm !important;
+            min-width: 210mm !important;
+            max-width: 210mm !important;
+            height: 297mm !important;
+            min-height: 297mm !important;
+            max-height: 297mm !important;
+            page-break-after: always !important;
+            page-break-inside: avoid !important;
+            box-sizing: border-box !important;
+            padding: 9mm 8mm !important;
+            display: grid !important;
+            grid-template-columns: 94mm 94mm !important;
+            grid-template-rows: 66mm 66mm 66mm 66mm !important;
+            gap: 5mm 6mm !important;
+            position: relative !important;
+            background: #fff !important;
+            overflow: hidden !important;
+          }
+          @page {
+            size: 210mm 297mm portrait;
+            margin: 0;
+          }
+        }
+      `}</style>
+
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">Bulk Document Generator</h1>
-          <p className="text-gray-500 text-sm mt-1">Generate ID Cards and Certificates for multiple students</p>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+              பல்க் ஆவண ஜெனரேட்டர் (Bulk Documents)
+            </h1>
+            <span className="text-xs bg-indigo-50 text-indigo-700 font-bold px-2.5 py-0.5 rounded-full border border-indigo-200">
+              8-Per-A4 Portrait
+            </span>
+          </div>
+          <p className="text-xs sm:text-sm text-slate-500 mt-1">
+            மாணவர்களின் அடையாள அட்டைகளை A4 போர்ட்ரைட்டில் 8 வீதம் பல்க்காக அச்சிட & சான்றிதழ்களை உருவாக்கலாம்.
+          </p>
         </div>
         
-        <div className="flex gap-3">
+        <div className="flex items-center gap-2.5 flex-wrap">
           <button
-            onClick={() => handlePrint('idcard')}
-            disabled={selectedIds.size === 0 || isGenerating}
-            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium shadow-sm"
+            onClick={() => setShowBulkIdModal(true)}
+            disabled={idCardPrintItems.length === 0}
+            className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-xs sm:text-sm font-bold transition-all shadow-sm shadow-indigo-600/20 cursor-pointer"
+            title="A4 போர்ட்ரைட்டில் 8 அடையாள அட்டைகள் வீதம் அச்சிட அல்லது PDF சேமிக்க"
           >
-            {isGenerating && printMode === 'idcard' ? (
-              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-            ) : (
-              <CreditCard size={18} />
-            )}
-            Generate ID Cards ({selectedIds.size})
+            <CreditCard size={18} />
+            <span>A4-ல் 8 ID கார்டுகள் பல்க் {selectedIds.size > 0 ? `(${selectedIds.size})` : `(${filteredStudents.length})`}</span>
           </button>
+
           <button
             onClick={() => handlePrint('certificate')}
             disabled={selectedIds.size === 0 || isGenerating}
-            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium shadow-sm"
+            className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs sm:text-sm font-bold transition-all shadow-sm shadow-emerald-600/20 cursor-pointer"
           >
             {isGenerating && printMode === 'certificate' ? (
-              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
             ) : (
               <FileText size={18} />
             )}
-            Generate Certificates ({selectedIds.size})
+            <span>சான்றிதழ்கள் ({selectedIds.size})</span>
           </button>
         </div>
       </div>
@@ -171,16 +320,37 @@ export default function BulkDocuments() {
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
             />
           </div>
-          <div className="sm:w-64">
+          <div className="sm:w-56">
             <select
               value={selectedGrade}
               onChange={(e) => setSelectedGrade(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+              className="w-full px-3.5 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-xs sm:text-sm font-semibold text-slate-800"
             >
-              <option value="">All Classes</option>
+              <option value="">அனைத்து வகுப்புகள் (All Classes)</option>
               {classes.map(c => (
                 <option key={c.id} value={c.name}>{c.name}</option>
               ))}
+            </select>
+          </div>
+
+          <div className="sm:w-64">
+            <select
+              value={selectedSubject}
+              onChange={(e) => setSelectedSubject(e.target.value)}
+              className="w-full px-3.5 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-xs sm:text-sm font-bold text-slate-800"
+            >
+              <option value="ALL">அனைத்துப் பாடங்கள் (All Subjects)</option>
+              {availableSubjects.map(sub => {
+                const count = students.filter(st => {
+                  const sSubs = (st.subjects || st.enrolledClasses || []).map((sb: any) => (typeof sb === 'string' ? sb : sb?.name || '')?.toString().trim().toLowerCase());
+                  return sSubs.includes(sub.toLowerCase()) && (!selectedGrade || st.grade === selectedGrade);
+                }).length;
+                return (
+                  <option key={sub} value={sub}>
+                    {sub} ({count} மாணவர்கள்)
+                  </option>
+                );
+              })}
             </select>
           </div>
         </div>
@@ -492,6 +662,116 @@ export default function BulkDocuments() {
           )}
         </div>
       </div>
+
+      {/* 
+        ====================================================
+        BULK 8-PER-A4 PORTRAIT ID CARDS MODAL
+        ====================================================
+      */}
+      {showBulkIdModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/90 backdrop-blur-md flex flex-col items-center p-2 sm:p-4 overflow-y-auto">
+          {/* Sticky Toolbar */}
+          <div className="sticky top-2 z-50 bg-slate-900 text-white border border-slate-700 px-5 py-3 rounded-2xl shadow-2xl flex items-center justify-between gap-4 w-full max-w-4xl mb-4">
+            <div>
+              <h3 className="text-sm sm:text-base font-black flex items-center gap-2">
+                <CreditCard size={18} className="text-amber-400" />
+                A4 போர்ட்ரைட்டில் 8 ID கார்டுகள் பல்க் அச்சிடுதல் (8-Per-A4 Portrait ID Cards)
+              </h3>
+              <p className="text-[11px] text-slate-300">
+                மொத்தம் {idCardPrintItems.length} மாணவர்கள் ({a4Pages.length} A4 தாள்கள்). ஒரு A4 தாளில் 8 ID கார்டுகள் வீதம் (2 x 4 வரிசை) அச்சிடப்படும்.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1.5 bg-slate-800/90 border border-slate-700 px-2.5 py-1.5 rounded-xl">
+                <BookOpen size={14} className="text-amber-400" />
+                <span className="text-[11px] font-bold text-amber-200">பாடம்:</span>
+                <select
+                  value={selectedSubject}
+                  onChange={(e) => setSelectedSubject(e.target.value)}
+                  className="bg-transparent text-white text-xs font-bold outline-none cursor-pointer"
+                >
+                  <option value="ALL" className="bg-slate-900 text-white">அனைத்துப் பாடங்கள்</option>
+                  {availableSubjects.map(sub => (
+                    <option key={sub} value={sub} className="bg-slate-900 text-white">{sub}</option>
+                  ))}
+                </select>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleDownloadA4PDF}
+                disabled={isGeneratingPdf || idCardPrintItems.length === 0}
+                className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-black px-4 py-2.5 rounded-xl text-xs transition-all shadow-lg shadow-blue-600/30 cursor-pointer"
+                title="A4 பக்கங்களை உயர்தர PDF கோப்பாகப் பதிவிறக்க"
+              >
+                <Download size={16} />
+                {isGeneratingPdf ? "PDF உருவாகிறது..." : "A4 PDF பதிவிறக்கு (Download PDF)"}
+              </button>
+
+              <button
+                type="button"
+                onClick={handlePrintA4Sheets}
+                className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black px-5 py-2.5 rounded-xl text-xs transition-all shadow-lg shadow-emerald-600/30 cursor-pointer"
+              >
+                <Printer size={16} />
+                அச்சிடுக / Print
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowBulkIdModal(false)}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white p-2 rounded-xl cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+          </div>
+
+          {/* Printable Container for 8-per-A4 Grid with Horizontal Scroll Protection */}
+          <div className="w-full overflow-x-auto flex flex-col items-center pb-12">
+            <div id="printable-bulk-idcards" className="space-y-8">
+              {a4Pages.map((pageGroup, pageIndex) => (
+                <div 
+                  key={pageIndex}
+                  className="a4-idcard-sheet bg-white border border-slate-300 rounded-none shadow-xl mx-auto relative overflow-hidden"
+                  style={{
+                    width: "210mm",
+                    minWidth: "210mm",
+                    maxWidth: "210mm",
+                    height: "297mm",
+                    minHeight: "297mm",
+                    maxHeight: "297mm",
+                    padding: "9mm 8mm",
+                    display: "grid",
+                    gridTemplateColumns: "94mm 94mm",
+                    gridTemplateRows: "66mm 66mm 66mm 66mm",
+                    gap: "5mm 6mm",
+                    overflow: "hidden",
+                    boxSizing: "border-box",
+                    backgroundColor: "#ffffff"
+                  }}
+                >
+                  {/* 8 Student ID Cards on the A4 Portrait Page */}
+                  {pageGroup.map((studentItem) => (
+                    <div 
+                      key={studentItem.id} 
+                      className="w-[94mm] h-[66mm] max-w-[94mm] max-h-[66mm] min-h-0 min-w-0 flex items-center justify-center overflow-hidden"
+                      style={{ width: "94mm", height: "66mm", maxHeight: "66mm", boxSizing: "border-box" }}
+                    >
+                      <StudentIdCardA4 
+                        student={studentItem} 
+                        adminSettings={adminSettings}
+                        selectedSubject={selectedSubject}
+                      />
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

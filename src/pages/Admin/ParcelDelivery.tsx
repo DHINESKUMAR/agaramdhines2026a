@@ -18,6 +18,8 @@ import {
 import ParcelReceiptCard from "../../components/ParcelReceiptCard";
 import { toPng } from "html-to-image";
 import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import * as XLSX from "xlsx";
 import { 
   Package, 
   Plus, 
@@ -35,6 +37,7 @@ import {
   Layers, 
   Users, 
   FileText, 
+  FileSpreadsheet,
   Scissors, 
   ArrowRight,
   ExternalLink,
@@ -77,6 +80,7 @@ export default function ParcelDeliveryPage() {
   const [showViewModal, setShowViewModal] = useState(false);
   const [viewingParcel, setViewingParcel] = useState<ParcelDelivery | null>(null);
   const [showBulkPrintModal, setShowBulkPrintModal] = useState(false);
+  const [showParcelReportModal, setShowParcelReportModal] = useState(false);
 
   // Add / Edit Form State
   const [editingParcelId, setEditingParcelId] = useState<string | null>(null);
@@ -775,22 +779,189 @@ export default function ParcelDeliveryPage() {
 
   const a4Pages = chunkIntoFours(bulkPrintItems);
 
-  // Trigger A4 Print
+  // Trigger A4 Print for 4-per-sheet receipts
   const handlePrintA4Sheets = () => {
+    window.print();
+  };
+
+  // Helper to format clean single-line or multi-line delivery address
+  const formatParcelAddress = (p: ParcelDelivery): string => {
+    if (p.fullAddress && p.fullAddress.trim()) return p.fullAddress.trim();
+    if (p.addressLines && Array.isArray(p.addressLines) && p.addressLines.length > 0) {
+      const combined = p.addressLines.filter(Boolean).map(s => s.trim()).filter(Boolean).join(", ");
+      if (combined) return combined;
+    }
+    const parts = [p.addressLine1, p.addressLine2, p.addressLine3, p.addressLine4]
+      .filter(Boolean)
+      .map(s => s?.trim())
+      .filter(Boolean);
+    return parts.length > 0 ? parts.join(", ") : "-";
+  };
+
+  // Helper to format delivery status
+  const formatParcelStatus = (status: string): string => {
+    return status === "delivered" ? "கிடைத்துவிட்டது (Delivered)" : "அனுப்பப்பட்டது (Dispatched)";
+  };
+
+  // Export Parcel List to Excel (.xlsx) with strictly requested fields
+  const handleExportParcelsExcel = () => {
+    const targetParcels = selectedIds.length > 0
+      ? parcels.filter(p => selectedIds.includes(p.id))
+      : filteredParcels;
+
+    if (targetParcels.length === 0) {
+      alert("ஏற்றுமதி செய்வதற்கு பார்சல்கள் எதுவும் இல்லை. (No parcels to export)");
+      return;
+    }
+
+    const dataToExport = targetParcels.map((p, index) => ({
+      "இலக்கம் (No)": index + 1,
+      "டிரேக்கிங் எண் (Tracking No)": p.trackingNumber || "-",
+      "ரோல் நம்பர் (Roll No)": p.studentRollNo || p.rollNo || "-",
+      "மாணவர் பெயர் (Student Name)": p.studentName || "-",
+      "முகவரி (Delivery Address)": formatParcelAddress(p),
+      "அனுப்பப்பட்ட தேதி (Dispatched Date)": p.dispatchedDate || "-",
+      "டெலிவரி நிலை (Delivery Status)": formatParcelStatus(p.status)
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+
+    // Set auto column widths for Excel
+    worksheet["!cols"] = [
+      { wch: 8 },  // No
+      { wch: 18 }, // Tracking No
+      { wch: 22 }, // Roll No
+      { wch: 28 }, // Student Name
+      { wch: 45 }, // Address
+      { wch: 16 }, // Dispatched Date
+      { wch: 26 }  // Status
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Parcel_Delivery_List");
+    XLSX.writeFile(workbook, `Agaram_Parcel_Delivery_List_${new Date().toISOString().split("T")[0]}.xlsx`);
+  };
+
+  // Export Parcel List to PDF (.pdf) with strictly requested fields
+  const handleExportParcelsPDF = () => {
+    const targetParcels = selectedIds.length > 0
+      ? parcels.filter(p => selectedIds.includes(p.id))
+      : filteredParcels;
+
+    if (targetParcels.length === 0) {
+      alert("PDF உருவாக்க பார்சல்கள் எதுவும் இல்லை. (No parcels to export)");
+      return;
+    }
+
+    const doc = new jsPDF({
+      orientation: "landscape",
+      unit: "mm",
+      format: "a4"
+    });
+
+    // Header Title
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.setTextColor(30, 58, 138); // Agaram Deep Blue
+    doc.text("AGARAM DHINESH ONLINE ACADEMY", 14, 14);
+
+    doc.setFontSize(11);
+    doc.setTextColor(51, 65, 85);
+    doc.text("Parcel & Tute Delivery Report (பார்சல் விநியோகப் பட்டியல்)", 14, 21);
+
+    const generatedOn = `Generated: ${new Date().toLocaleDateString("en-GB")} ${new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true })}`;
+    const summaryStats = `Total: ${targetParcels.length} | Dispatched: ${targetParcels.filter(p => p.status === "dispatched").length} | Delivered: ${targetParcels.filter(p => p.status === "delivered").length}`;
+    
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`${summaryStats}  |  ${generatedOn}`, 14, 27);
+
+    const tableColumn = [
+      "No.",
+      "Tracking No",
+      "Roll Number",
+      "Student Name",
+      "Delivery Address",
+      "Dispatched Date",
+      "Status"
+    ];
+
+    const tableRows = targetParcels.map((p, index) => [
+      String(index + 1),
+      p.trackingNumber || "-",
+      p.studentRollNo || p.rollNo || "-",
+      p.studentName || "-",
+      formatParcelAddress(p),
+      p.dispatchedDate || "-",
+      p.status === "delivered" ? "Delivered (கிடைத்துவிட்டது)" : "Dispatched (அனுப்பப்பட்டது)"
+    ]);
+
+    autoTable(doc, {
+      head: [tableColumn],
+      body: tableRows,
+      startY: 31,
+      theme: "grid",
+      styles: {
+        fontSize: 8.5,
+        cellPadding: 2.5,
+        textColor: [30, 41, 59],
+        lineColor: [226, 232, 240],
+        lineWidth: 0.1,
+        valign: "middle"
+      },
+      headStyles: {
+        fillColor: [30, 58, 138],
+        textColor: [255, 255, 255],
+        fontStyle: "bold",
+        fontSize: 9,
+        halign: "left"
+      },
+      columnStyles: {
+        0: { cellWidth: 12, halign: "center" },
+        1: { cellWidth: 32, fontStyle: "bold" },
+        2: { cellWidth: 36, fontStyle: "bold" },
+        3: { cellWidth: 44 },
+        4: { cellWidth: 92 },
+        5: { cellWidth: 26, halign: "center" },
+        6: { cellWidth: 28, halign: "center" }
+      },
+      alternateRowStyles: {
+        fillColor: [248, 250, 252]
+      },
+      didParseCell: (data) => {
+        if (data.section === 'body' && data.column.index === 6) {
+          const val = String(data.cell.raw);
+          if (val.includes("Delivered")) {
+            data.cell.styles.textColor = [16, 185, 129];
+            data.cell.styles.fontStyle = "bold";
+          } else {
+            data.cell.styles.textColor = [217, 119, 6];
+            data.cell.styles.fontStyle = "bold";
+          }
+        }
+      }
+    });
+
+    doc.save(`Agaram_Parcel_Delivery_List_${new Date().toISOString().split("T")[0]}.pdf`);
+  };
+
+  // Trigger A4 Parcel Report Print
+  const handlePrintParcelReport = () => {
     window.print();
   };
 
   return (
     <div className="space-y-6 pb-20">
       {/* 
-        Print-only stylesheet for 4 receipts per A4 sheet with cutting guides 
+        Print-only stylesheet supporting both 4-per-A4 receipts and Parcel List A4 Table
       */}
       <style>{`
         @media print {
           body * {
             visibility: hidden;
           }
-          #printable-bulk-a4, #printable-bulk-a4 * {
+          #printable-bulk-a4, #printable-bulk-a4 *, #printable-parcel-report, #printable-parcel-report * {
             visibility: visible;
           }
           #printable-bulk-a4 {
@@ -800,6 +971,15 @@ export default function ParcelDeliveryPage() {
             width: 210mm !important;
             display: block !important;
             background: #fff;
+          }
+          #printable-parcel-report {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100% !important;
+            display: block !important;
+            background: #fff;
+            padding: 5mm !important;
           }
           .a4-page-sheet {
             width: 210mm !important;
@@ -821,8 +1001,8 @@ export default function ParcelDeliveryPage() {
             overflow: hidden !important;
           }
           @page {
-            size: 210mm 297mm;
-            margin: 0;
+            size: auto;
+            margin: 6mm;
           }
         }
       `}</style>
@@ -1144,28 +1324,85 @@ export default function ParcelDeliveryPage() {
               ))}
             </select>
 
+            {/* Parcel List A4 Print Button */}
+            <button
+              onClick={() => setShowParcelReportModal(true)}
+              disabled={filteredParcels.length === 0}
+              className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold px-3.5 py-2 rounded-xl text-xs transition-all shadow-sm disabled:opacity-50 cursor-pointer"
+              title="அனுப்பப்பட்ட பட்டியலை A4 தாளில் பல்க் பிரிண்ட் செய்ய"
+            >
+              <Printer size={15} />
+              <span>A4 பட்டியல் பிரிண்ட் {selectedIds.length > 0 ? `(${selectedIds.length})` : `(${filteredParcels.length})`}</span>
+            </button>
+
+            {/* Excel Download Button */}
+            <button
+              onClick={handleExportParcelsExcel}
+              disabled={filteredParcels.length === 0}
+              className="flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-3.5 py-2 rounded-xl text-xs transition-all shadow-sm disabled:opacity-50 cursor-pointer"
+              title="டிரேக்கிங், ரோல் எண், பெயர், முகவரி, தேதி, நிலை அடங்கிய எக்செல் (.xlsx) கோப்பை பதிவிறக்க"
+            >
+              <FileSpreadsheet size={15} />
+              <span>Excel பதிவிறக்கு</span>
+            </button>
+
+            {/* PDF Download Button */}
+            <button
+              onClick={handleExportParcelsPDF}
+              disabled={filteredParcels.length === 0}
+              className="flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold px-3.5 py-2 rounded-xl text-xs transition-all shadow-sm disabled:opacity-50 cursor-pointer"
+              title="டிரேக்கிங், ரோல் எண், பெயர், முகவரி, தேதி, நிலை அடங்கிய PDF கோப்பை பதிவிறக்க"
+            >
+              <FileText size={15} />
+              <span>PDF பதிவிறக்கு</span>
+            </button>
+
             {/* Bulk A4 Sheet Print Button */}
             <button
               onClick={() => setShowBulkPrintModal(true)}
               disabled={filteredParcels.length === 0}
-              className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-xl text-xs transition-all shadow-sm disabled:opacity-50"
+              className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-900 text-white font-bold px-3.5 py-2 rounded-xl text-xs transition-all shadow-sm disabled:opacity-50 cursor-pointer"
               title="ஒரு A4 தாளில் 4 ரசீதுகள் வீதம் அச்சிட அல்லது PDF சேமிக்க"
             >
               <Printer size={15} />
-              <span>A4-ல் 4 வீதம் பல்க் பிரிண்ட் {selectedIds.length > 0 ? `(${selectedIds.length})` : `(${filteredParcels.length})`}</span>
+              <span>A4-ல் 4 ரசீதுகள் பல்க் {selectedIds.length > 0 ? `(${selectedIds.length})` : `(${filteredParcels.length})`}</span>
             </button>
           </div>
         </div>
 
         {selectedIds.length > 0 && (
-          <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs bg-indigo-50/50 p-2.5 rounded-xl">
+          <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs bg-indigo-50/50 p-2.5 rounded-xl">
             <span className="font-bold text-indigo-900">
               {selectedIds.length} பார்சல்கள் தெரிவு செய்யப்பட்டுள்ளன
             </span>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={handleExportParcelsExcel}
+                className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-2.5 py-1 rounded-lg flex items-center gap-1 text-xs transition-colors cursor-pointer"
+                title="தெரிவு செய்யப்பட்ட பார்சல்களை எக்செல் ஆக பதிவிறக்க"
+              >
+                <FileSpreadsheet size={13} />
+                Excel ({selectedIds.length})
+              </button>
+              <button
+                onClick={handleExportParcelsPDF}
+                className="bg-rose-600 hover:bg-rose-700 text-white font-bold px-2.5 py-1 rounded-lg flex items-center gap-1 text-xs transition-colors cursor-pointer"
+                title="தெரிவு செய்யப்பட்ட பார்சல்களை PDF ஆக பதிவிறக்க"
+              >
+                <FileText size={13} />
+                PDF ({selectedIds.length})
+              </button>
+              <button
+                onClick={() => setShowParcelReportModal(true)}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-2.5 py-1 rounded-lg flex items-center gap-1 text-xs transition-colors cursor-pointer"
+                title="தெரிவு செய்யப்பட்ட பார்சல்களை A4 தாளில் அச்சிட"
+              >
+                <Printer size={13} />
+                A4 பட்டியல் பிரிண்ட் ({selectedIds.length})
+              </button>
               <button
                 onClick={handleDeleteSelected}
-                className="text-rose-700 bg-rose-100 hover:bg-rose-200 font-bold px-2.5 py-1 rounded-lg flex items-center gap-1 text-xs transition-colors"
+                className="text-rose-700 bg-rose-100 hover:bg-rose-200 font-bold px-2.5 py-1 rounded-lg flex items-center gap-1 text-xs transition-colors cursor-pointer"
                 title="தெரிவு செய்யப்பட்ட பார்சல்களை நிரந்தரமாக நீக்க"
               >
                 <Trash2 size={13} />
@@ -1173,7 +1410,7 @@ export default function ParcelDeliveryPage() {
               </button>
               <button
                 onClick={() => setSelectedIds([])}
-                className="text-slate-600 hover:text-slate-900 font-semibold px-2 py-1 rounded"
+                className="text-slate-600 hover:text-slate-900 font-semibold px-2 py-1 rounded cursor-pointer"
               >
                 Clear Selection
               </button>
@@ -1947,6 +2184,183 @@ export default function ParcelDeliveryPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 
+        ====================================================
+        6. A4 PARCEL DELIVERY REPORT & BULK LIST PRINT MODAL
+        ====================================================
+      */}
+      {showParcelReportModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/90 backdrop-blur-md flex flex-col items-center p-2 sm:p-4 overflow-y-auto">
+          {/* Sticky Toolbar */}
+          <div className="sticky top-2 z-50 bg-slate-900 text-white border border-slate-700 px-5 py-3 rounded-2xl shadow-2xl flex items-center justify-between gap-4 w-full max-w-5xl mb-4">
+            <div>
+              <h3 className="text-sm sm:text-base font-black flex items-center gap-2">
+                <Printer size={18} className="text-blue-400" />
+                A4 பார்சல் விநியோகப் பட்டியல் பல்க் பிரிண்ட் (Parcel Delivery Report)
+              </h3>
+              <p className="text-[11px] text-slate-300">
+                மொத்தம் {selectedIds.length > 0 ? selectedIds.length : filteredParcels.length} பார்சல்கள். A4 தாளில் அச்சிட அல்லது சேமிக்கத் தயார்.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleExportParcelsExcel}
+                className="flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-black px-3.5 py-2 rounded-xl text-xs transition-all shadow-md cursor-pointer"
+                title="Excel (.xlsx) கோப்பாகப் பதிவிறக்க"
+              >
+                <FileSpreadsheet size={15} />
+                Excel (.xlsx)
+              </button>
+
+              <button
+                type="button"
+                onClick={handleExportParcelsPDF}
+                className="flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white font-black px-3.5 py-2 rounded-xl text-xs transition-all shadow-md cursor-pointer"
+                title="PDF (.pdf) கோப்பாகப் பதிவிறக்க"
+              >
+                <FileText size={15} />
+                PDF (.pdf)
+              </button>
+
+              <button
+                type="button"
+                onClick={handlePrintParcelReport}
+                className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-black px-4 py-2 rounded-xl text-xs transition-all shadow-lg shadow-blue-600/30 cursor-pointer"
+              >
+                <Printer size={15} />
+                A4 அச்சிடுக / Print
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowParcelReportModal(false)}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white p-2 rounded-xl cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+          </div>
+
+          {/* Printable Report Paper Preview */}
+          <div className="w-full max-w-5xl bg-white rounded-xl shadow-2xl p-6 sm:p-8 mb-12 text-slate-900 border border-slate-200">
+            <div id="printable-parcel-report">
+              {/* Header */}
+              <div className="border-b-2 border-slate-800 pb-4 mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full border-2 border-amber-500 overflow-hidden bg-slate-50 flex items-center justify-center p-0.5 shrink-0">
+                    <img 
+                      src="/assets/agaram-logo.png" 
+                      alt="Logo" 
+                      className="w-full h-full object-contain"
+                      onError={(e) => {
+                        (e.target as HTMLElement).style.display = 'none';
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <h1 className="text-lg sm:text-xl font-black tracking-tight text-blue-950 uppercase">
+                      AGARAM DHINESH ONLINE ACADEMY
+                    </h1>
+                    <p className="text-xs font-bold text-slate-700">
+                      பார்சல் மற்றும் விநியோகப் பட்டியல் (Parcel & Tute Delivery Report)
+                    </p>
+                    <p className="text-[11px] text-slate-500 font-semibold mt-0.5">
+                      Tel: 0778054232  |  No. 111/2, Pahalakama, Udadelthotta, Galaha, Kandy.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="text-right text-xs space-y-1">
+                  <div className="font-bold text-slate-800">
+                    அச்சிடப்பட்ட தேதி: {new Date().toLocaleDateString("en-GB")}
+                  </div>
+                  <div className="text-[11px] text-slate-500 font-semibold">
+                    நேரம்: {new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true })}
+                  </div>
+                  <div className="flex items-center justify-end gap-1.5 pt-1">
+                    <span className="bg-slate-100 text-slate-800 font-bold px-2 py-0.5 rounded text-[10px]">
+                      மொத்தம்: {selectedIds.length > 0 ? selectedIds.length : filteredParcels.length}
+                    </span>
+                    <span className="bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded text-[10px]">
+                      அனுப்பப்பட்டவை: {(selectedIds.length > 0 ? parcels.filter(p => selectedIds.includes(p.id)) : filteredParcels).filter(p => p.status === "dispatched").length}
+                    </span>
+                    <span className="bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded text-[10px]">
+                      கிடைத்துவிட்டவை: {(selectedIds.length > 0 ? parcels.filter(p => selectedIds.includes(p.id)) : filteredParcels).filter(p => p.status === "delivered").length}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Strict Table with ONLY the requested 6 columns */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-blue-950 text-white font-bold border border-blue-950">
+                      <th className="py-2.5 px-2 text-center w-10 border-r border-blue-900">#</th>
+                      <th className="py-2.5 px-3 border-r border-blue-900 w-32">டிரேக்கிங் எண் (Tracking No)</th>
+                      <th className="py-2.5 px-3 border-r border-blue-900 w-36">ரோல் நம்பர் (Roll No)</th>
+                      <th className="py-2.5 px-3 border-r border-blue-900 w-44">மாணவர் பெயர் (Name)</th>
+                      <th className="py-2.5 px-3 border-r border-blue-900">முகவரி (Delivery Address)</th>
+                      <th className="py-2.5 px-3 text-center border-r border-blue-900 w-28">அனுப்பப்பட்ட தேதி</th>
+                      <th className="py-2.5 px-3 text-center w-28">டெலிவரி நிலை</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {(selectedIds.length > 0 
+                      ? parcels.filter(p => selectedIds.includes(p.id)) 
+                      : filteredParcels
+                    ).map((parcel, idx) => (
+                      <tr 
+                        key={parcel.id} 
+                        className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/70"}
+                      >
+                        <td className="py-2.5 px-2 text-center font-bold text-slate-500 border border-slate-200">
+                          {idx + 1}
+                        </td>
+                        <td className="py-2.5 px-3 font-mono font-bold text-blue-900 border border-slate-200">
+                          {parcel.trackingNumber || "-"}
+                        </td>
+                        <td className="py-2.5 px-3 font-mono font-bold text-slate-900 border border-slate-200">
+                          {parcel.studentRollNo || parcel.rollNo || "-"}
+                        </td>
+                        <td className="py-2.5 px-3 font-bold text-slate-900 border border-slate-200">
+                          {parcel.studentName || "-"}
+                        </td>
+                        <td className="py-2.5 px-3 text-slate-700 leading-snug border border-slate-200">
+                          {formatParcelAddress(parcel)}
+                        </td>
+                        <td className="py-2.5 px-3 text-center font-semibold text-slate-700 border border-slate-200 whitespace-nowrap">
+                          {parcel.dispatchedDate || "-"}
+                        </td>
+                        <td className="py-2.5 px-3 text-center border border-slate-200 whitespace-nowrap">
+                          {parcel.status === "delivered" ? (
+                            <span className="inline-block bg-emerald-100 text-emerald-800 text-[11px] font-bold px-2 py-0.5 rounded border border-emerald-300">
+                              கிடைத்துவிட்டது
+                            </span>
+                          ) : (
+                            <span className="inline-block bg-amber-100 text-amber-800 text-[11px] font-bold px-2 py-0.5 rounded border border-amber-300">
+                              அனுப்பப்பட்டது
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Footer Note */}
+              <div className="mt-6 pt-3 border-t border-slate-200 flex items-center justify-between text-[11px] text-slate-500 font-medium">
+                <span>AGARAM DHINESH ONLINE ACADEMY - OFFICIAL DISPATCH REGISTER</span>
+                <span>Page 1 of 1</span>
+              </div>
+            </div>
           </div>
         </div>
       )}

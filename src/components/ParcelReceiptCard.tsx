@@ -2,25 +2,43 @@ import React, { useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { toPng } from "html-to-image";
 import jsPDF from "jspdf";
-import { Copy, Download, Printer, Check } from "lucide-react";
-import { ParcelDelivery } from "../lib/db";
+import { Copy, Download, Printer, Check, Pencil } from "lucide-react";
+import { ParcelDelivery, updateParcelDelivery } from "../lib/db";
 
 interface ParcelReceiptCardProps {
   parcel: ParcelDelivery;
   showActions?: boolean;
   className?: string;
   isPrintView?: boolean;
+  onUpdateAmount?: (newAmount: string) => void;
 }
 
 export default function ParcelReceiptCard({
   parcel,
   showActions = true,
   className = "",
-  isPrintView = false
+  isPrintView = false,
+  onUpdateAmount
 }: ParcelReceiptCardProps) {
   const cardRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [isEditingAmount, setIsEditingAmount] = useState(false);
+  const [editAmountVal, setEditAmountVal] = useState(
+    parcel.payableAmount ? String(parcel.payableAmount).replace(/[^0-9.]/g, '') : ""
+  );
+
+  const handleSaveInlineAmount = async () => {
+    const clean = editAmountVal.trim();
+    try {
+      await updateParcelDelivery(parcel.id, { payableAmount: clean });
+      parcel.payableAmount = clean;
+      if (onUpdateAmount) onUpdateAmount(clean);
+      setIsEditingAmount(false);
+    } catch (err: any) {
+      alert("தொகையை மாற்றுவதில் பிழை: " + (err?.message || err));
+    }
+  };
 
   // Short, fast, ultra-clean confirmation link that creates big chunky scannable QR modules
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
@@ -230,6 +248,68 @@ export default function ParcelReceiptCard({
                 {parcel.phone || "—"}
               </span>
             </div>
+            {/* Amount to Pay (செலுத்த வேண்டிய தொகை) in English */}
+            <div className={`flex items-center justify-between ${isPrintView ? "pt-0.5 mt-0.5" : "pt-1 mt-1"} border-t border-black/25`}>
+              <div className="flex items-center flex-1">
+                <span className={`font-extrabold ${isPrintView ? "min-w-[84px] text-[10px]" : "min-w-[94px] text-[11px]"} text-black shrink-0`}>
+                  Amount to Pay-
+                </span>
+                {isEditingAmount && !isPrintView ? (
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] font-bold text-black">Rs.</span>
+                    <input
+                      type="text"
+                      value={editAmountVal}
+                      onChange={(e) => setEditAmountVal(e.target.value)}
+                      placeholder="1500"
+                      className="w-20 px-1 py-0.5 border border-black text-xs font-mono font-bold rounded bg-yellow-50 outline-none text-black"
+                      autoFocus
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleSaveInlineAmount();
+                        if (e.key === "Escape") setIsEditingAmount(false);
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSaveInlineAmount}
+                      className="bg-black text-white px-1.5 py-0.5 rounded text-[10px] font-bold cursor-pointer"
+                    >
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingAmount(false)}
+                      className="text-slate-600 px-1 text-[10px] font-bold cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ) : (
+                  <span className={`font-black ${isPrintView ? "text-[11px]" : "text-[12.5px]"} font-mono tracking-wider text-black`}>
+                    {parcel.payableAmount ? (
+                      String(parcel.payableAmount).trim().toLowerCase().startsWith("rs")
+                        ? String(parcel.payableAmount).trim()
+                        : `Rs. ${String(parcel.payableAmount).trim()}`
+                    ) : (
+                      "Rs. 0.00"
+                    )}
+                  </span>
+                )}
+              </div>
+              {!isPrintView && !isEditingAmount && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditAmountVal(parcel.payableAmount ? String(parcel.payableAmount).replace(/[^0-9.]/g, '') : "");
+                    setIsEditingAmount(true);
+                  }}
+                  title="செலுத்த வேண்டிய தொகையை மாற்ற (Edit Amount to Pay)"
+                  className="text-black/60 hover:text-black p-0.5 rounded cursor-pointer ml-1"
+                >
+                  <Pencil size={11} />
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -313,6 +393,23 @@ export default function ParcelReceiptCard({
       {/* Action Buttons for Single Receipt */}
       {showActions && !isPrintView && (
         <div className="flex items-center gap-1.5 mt-3 flex-wrap justify-center">
+          <button
+            type="button"
+            onClick={() => {
+              setEditAmountVal(parcel.payableAmount ? String(parcel.payableAmount).replace(/[^0-9.]/g, '') : "");
+              setIsEditingAmount(true);
+            }}
+            title="செலுத்த வேண்டிய தொகையை மாற்ற (Edit Amount to Pay)"
+            className="flex items-center gap-1 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-2xs cursor-pointer"
+          >
+            <Pencil size={13} className="text-amber-700" />
+            Amount: {parcel.payableAmount ? (
+              String(parcel.payableAmount).trim().toLowerCase().startsWith("rs")
+                ? parcel.payableAmount
+                : `Rs. ${parcel.payableAmount}`
+            ) : "Rs. 0 (Edit)"}
+          </button>
+
           <button
             type="button"
             onClick={handleCopyImage}

@@ -4534,6 +4534,7 @@ export interface ParcelDelivery {
   addressLines?: string[];
   fullAddress?: string;
   itemsDescription?: string;
+  payableAmount?: string;
   // Sender information (Teacher D. Dinesh Kumar)
   senderName: string;
   senderAcademy: string;

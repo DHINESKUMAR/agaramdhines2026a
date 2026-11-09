@@ -90,6 +90,7 @@ export default function ParcelDeliveryPage() {
     studentName: "",
     grade: "",
     phone: "",
+    payableAmount: "",
     addressLines: ["", "", ""],
     addressLine1: "",
     addressLine2: "",
@@ -153,6 +154,7 @@ export default function ParcelDeliveryPage() {
   const [bulkGrade, setBulkGrade] = useState("");
   const [bulkItemDescription, setBulkItemDescription] = useState("தமிழ் பாடப் பொதி & டியூட் (Tamil Tute Package)");
   const [bulkDispatchedDate, setBulkDispatchedDate] = useState(new Date().toISOString().split("T")[0]);
+  const [bulkPayableAmount, setBulkPayableAmount] = useState("");
 
   useEffect(() => {
     loadData();
@@ -232,6 +234,7 @@ export default function ParcelDeliveryPage() {
       studentName: "",
       grade: "",
       phone: "",
+      payableAmount: "",
       addressLines: ["", "", ""],
       addressLine1: "",
       addressLine2: "",
@@ -257,6 +260,7 @@ export default function ParcelDeliveryPage() {
       studentName: parcel.studentName,
       grade: parcel.grade || "",
       phone: parcel.phone,
+      payableAmount: parcel.payableAmount || "",
       addressLines: existingLines.length > 0 ? existingLines : ["", "", ""],
       addressLine1: parcel.addressLine1 || existingLines[0] || "",
       addressLine2: parcel.addressLine2 || existingLines[1] || "",
@@ -269,7 +273,7 @@ export default function ParcelDeliveryPage() {
     setShowAddModal(true);
   };
 
-  // Smart Parser for pasting Name, Address, Phone, Roll Number
+  // Smart Parser for pasting Name, Address, Phone, Roll Number, Amount
   const handleApplySmartPaste = () => {
     if (!smartPasteText.trim()) {
       alert("தயவுசெய்து விபரங்களைப் பேஸ்ட் செய்யவும் (Please paste text first).");
@@ -280,8 +284,9 @@ export default function ParcelDeliveryPage() {
     let parsedName = "";
     let parsedPhone = "";
     let parsedRollNo = "";
+    let parsedAmount = "";
     const addressLines: string[] = [];
-    let currentField: 'none' | 'name' | 'address' | 'phone' | 'roll' = 'none';
+    let currentField: 'none' | 'name' | 'address' | 'phone' | 'roll' | 'amount' = 'none';
 
     for (const rawLine of lines) {
       const line = rawLine.trim();
@@ -308,7 +313,14 @@ export default function ParcelDeliveryPage() {
         continue;
       }
 
-      // 4. Address header
+      // 4. Amount to Pay
+      if (lower.startsWith("amount") || lower.startsWith("rs") || lower.includes("amount to pay") || lower.includes("payable amount") || lower.includes("fee") || lower.includes("செலுத்த வேண்டிய")) {
+        parsedAmount = line.replace(/^(amount(\s*to\s*pay)?|payable\s*amount|rs\.?|fee|செலுத்த\s*வேண்டிய\s*தொகை):?\s*[-:]?\s*/i, "").trim();
+        currentField = 'none';
+        continue;
+      }
+
+      // 5. Address header
       if (lower.startsWith("adress") || lower.startsWith("address") || lower.startsWith("முகவரி")) {
         const val = line.replace(/^(adress|address|முகவரி):?\s*[-:]?\s*/i, "").trim();
         if (val) addressLines.push(val);
@@ -352,6 +364,7 @@ export default function ParcelDeliveryPage() {
       studentName: parsedName || prev.studentName,
       phone: parsedPhone || prev.phone,
       studentRollNo: parsedRollNo || prev.studentRollNo,
+      payableAmount: parsedAmount || prev.payableAmount,
       addressLines: finalAddressLines,
       addressLine1: finalAddressLines[0] || prev.addressLine1,
       addressLine2: finalAddressLines[1] || prev.addressLine2,
@@ -359,7 +372,7 @@ export default function ParcelDeliveryPage() {
       addressLine4: finalAddressLines[3] || prev.addressLine4
     }));
 
-    alert(`விபரங்கள் தானாகப் பிரிக்கப்பட்டு பூர்த்தியாகின!\n\nபெயர்: ${parsedName || 'N/A'}\nரோல் எண்: ${parsedRollNo || 'N/A'}\nதொலைபேசி: ${parsedPhone || 'N/A'}\nமுகவரி வரிகள்: ${finalAddressLines.length} வரிகள் (அனைத்து வரிகளும் தனித்தனியாக சேர்க்கப்பட்டன)`);
+    alert(`விபரங்கள் தானாகப் பிரிக்கப்பட்டு பூர்த்தியாகின!\n\nபெயர்: ${parsedName || 'N/A'}\nரோல் எண்: ${parsedRollNo || 'N/A'}\nதொலைபேசி: ${parsedPhone || 'N/A'}\nதொகை: ${parsedAmount ? `Rs. ${parsedAmount}` : 'N/A'}\nமுகவரி வரிகள்: ${finalAddressLines.length} வரிகள்`);
   };
 
   const handleSaveParcel = async (e: React.FormEvent) => {
@@ -382,6 +395,7 @@ export default function ParcelDeliveryPage() {
           studentName: formData.studentName,
           grade: formData.grade,
           phone: formData.phone,
+          payableAmount: formData.payableAmount.trim(),
           addressLines: activeLines,
           addressLine1: line1,
           addressLine2: line2,
@@ -400,6 +414,7 @@ export default function ParcelDeliveryPage() {
           studentName: formData.studentName,
           grade: formData.grade,
           phone: formData.phone,
+          payableAmount: formData.payableAmount.trim(),
           addressLines: activeLines,
           addressLine1: line1,
           addressLine2: line2,
@@ -425,6 +440,35 @@ export default function ParcelDeliveryPage() {
     } catch (err: any) {
       console.error("Error saving parcel:", err);
       alert("பிழை: " + (err?.message || err));
+    }
+  };
+
+  // Quick Edit Amount to Pay handler
+  const handleQuickEditAmount = async (parcel: ParcelDelivery) => {
+    const currentVal = parcel.payableAmount ? String(parcel.payableAmount).replace(/[^0-9.]/g, '') : "";
+    const input = window.prompt(
+      `"${parcel.studentName}" மாணவருக்கான செலுத்த வேண்டிய தொகையை (Amount to Pay) உள்ளிடவும்:\n(Enter Amount to Pay in Rs.)`,
+      currentVal || "1500"
+    );
+    if (input === null) return;
+    const cleanAmount = input.trim();
+    try {
+      setLoading(true);
+      await updateParcelDelivery(parcel.id, {
+        payableAmount: cleanAmount
+      });
+      setParcels(prev => prev.map(p => p.id === parcel.id ? { ...p, payableAmount: cleanAmount } : p));
+      if (trackedParcel && (trackedParcel.id === parcel.id || trackedParcel.trackingNumber === parcel.trackingNumber)) {
+        setTrackedParcel(prev => prev ? { ...prev, payableAmount: cleanAmount } : null);
+      }
+      if (viewingParcel && viewingParcel.id === parcel.id) {
+        setViewingParcel(prev => prev ? { ...prev, payableAmount: cleanAmount } : null);
+      }
+      loadData();
+    } catch (err: any) {
+      alert("பிழை: " + (err?.message || err));
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -580,6 +624,7 @@ export default function ParcelDeliveryPage() {
           addressLine3: line3 || st.district || "இலங்கை",
           fullAddress: [line1, line2, line3].filter(Boolean).join(", "),
           itemsDescription: bulkItemDescription,
+          payableAmount: bulkPayableAmount.trim() || "",
           senderName: DEFAULT_SENDER_DETAILS.senderName,
           senderAcademy: DEFAULT_SENDER_DETAILS.senderAcademy,
           senderAddressLine1: DEFAULT_SENDER_DETAILS.senderAddressLine1,
@@ -1205,6 +1250,20 @@ export default function ParcelDeliveryPage() {
                         <div className="text-xs text-slate-300 mt-1 space-y-0.5">
                           <p>📍 {trackedParcel.fullAddress || trackedParcel.addressLine1 || "முகவரி குறிப்பிடப்படவில்லை"}</p>
                           <p>📞 {trackedParcel.phone || "தொலைபேசி எண் இல்லை"}</p>
+                          <div className="flex items-center gap-2 pt-0.5">
+                            <span className="font-bold text-amber-300">
+                              💵 Amount to Pay: {trackedParcel.payableAmount ? (
+                                String(trackedParcel.payableAmount).startsWith("Rs") ? trackedParcel.payableAmount : `Rs. ${trackedParcel.payableAmount}`
+                              ) : "Rs. 0.00"}
+                            </span>
+                            <button
+                              onClick={() => handleQuickEditAmount(trackedParcel)}
+                              title="செலுத்த வேண்டிய தொகையை மாற்ற (Edit Amount to Pay)"
+                              className="text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-200 px-2 py-0.5 rounded border border-slate-600 font-bold flex items-center gap-1 cursor-pointer"
+                            >
+                              <Edit3 size={11} /> Edit Amount
+                            </button>
+                          </div>
                           {trackedParcel.status === "delivered" ? (
                             <p className="text-emerald-300 font-bold mt-1">
                               ✓ மாணவருக்குக் கிடைத்த திகதி / நேரம்: {trackedParcel.deliveredDate || "உறுதிப்படுத்தப்பட்டது"}
@@ -1446,6 +1505,7 @@ export default function ParcelDeliveryPage() {
                   <th className="p-3.5">மாணவர் பெயர் (Student)</th>
                   <th className="p-3.5">முகவரி (Delivery Address)</th>
                   <th className="p-3.5">அனுப்பப்பட்ட திகதி</th>
+                  <th className="p-3.5">செலுத்த வேண்டிய தொகை (Amount to Pay)</th>
                   <th className="p-3.5 text-center">டெலிவரி நிலை (Status)</th>
                   <th className="p-3.5 text-right">நடவடிக்கைகள்</th>
                 </tr>
@@ -1494,6 +1554,27 @@ export default function ParcelDeliveryPage() {
 
                     <td className="p-3.5 text-slate-600 text-[11px] font-medium whitespace-nowrap">
                       {parcel.dispatchedDate}
+                    </td>
+
+                    <td className="p-3.5 whitespace-nowrap">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono font-bold text-slate-900 text-xs bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                          {parcel.payableAmount ? (
+                            String(parcel.payableAmount).trim().toLowerCase().startsWith("rs")
+                              ? parcel.payableAmount
+                              : `Rs. ${parcel.payableAmount}`
+                          ) : (
+                            <span className="text-slate-400 font-normal">Rs. 0.00</span>
+                          )}
+                        </span>
+                        <button
+                          onClick={() => handleQuickEditAmount(parcel)}
+                          title="செலுத்த வேண்டிய தொகையை மாற்ற (Edit Amount to Pay)"
+                          className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors cursor-pointer"
+                        >
+                          <Edit3 size={13} />
+                        </button>
+                      </div>
                     </td>
 
                     <td className="p-3.5 text-center whitespace-nowrap">
@@ -1755,10 +1836,10 @@ export default function ParcelDeliveryPage() {
                 ))}
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-slate-100 pt-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 border-t border-slate-100 pt-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    அனுப்பும் திகதி (Dispatched Date)
+                    அனுப்பும் திகதி (Date)
                   </label>
                   <input
                     type="date"
@@ -1766,6 +1847,24 @@ export default function ParcelDeliveryPage() {
                     onChange={(e) => setFormData({ ...formData, dispatchedDate: e.target.value })}
                     className="w-full text-xs border border-slate-300 rounded-xl p-2 outline-none font-medium"
                   />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    தொகை (Amount to Pay)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-2.5 top-2 text-xs font-bold text-slate-500">
+                      Rs.
+                    </span>
+                    <input
+                      type="text"
+                      value={formData.payableAmount}
+                      onChange={(e) => setFormData({ ...formData, payableAmount: e.target.value })}
+                      placeholder="e.g. 1500"
+                      className="w-full text-xs font-mono font-bold border border-slate-300 rounded-xl p-2 pl-8 outline-none focus:border-indigo-500"
+                    />
+                  </div>
                 </div>
 
                 <div>
@@ -1882,6 +1981,25 @@ export default function ParcelDeliveryPage() {
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
+                  செலுத்த வேண்டிய தொகை (Amount to Pay)
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2.5 text-xs font-bold text-slate-500">
+                    Rs.
+                  </span>
+                  <input
+                    type="text"
+                    value={bulkPayableAmount}
+                    onChange={(e) => setBulkPayableAmount(e.target.value)}
+                    placeholder="e.g. 1500"
+                    className="w-full text-xs font-mono font-bold border border-slate-300 rounded-xl p-2.5 pl-9 outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+                <span className="text-[10px] text-slate-500">ரசீதில் "Amount to Pay" என அச்சிடப்படும்</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
                   அனுப்பும் திகதி (Dispatched Date)
                 </label>
                 <input
@@ -1934,7 +2052,14 @@ export default function ParcelDeliveryPage() {
             </div>
 
             <div className="p-6 flex flex-col items-center justify-center">
-              <ParcelReceiptCard parcel={viewingParcel} showActions={true} />
+              <ParcelReceiptCard 
+                parcel={viewingParcel} 
+                showActions={true} 
+                onUpdateAmount={(newAmt) => {
+                  setViewingParcel(prev => prev ? { ...prev, payableAmount: newAmt } : null);
+                  loadData();
+                }}
+              />
             </div>
           </div>
         </div>

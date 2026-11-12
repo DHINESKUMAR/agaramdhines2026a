@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { getStudents, getFees, saveFees, saveStudents, getClasses, getAdminSettings } from "../../lib/db";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { FileSpreadsheet, FileText, X, CheckCircle, Download, Printer, Copy, Image as ImageIcon, Share2, Plus, Trash2 } from "lucide-react";
+import { FileSpreadsheet, FileText, X, CheckCircle, Download, Printer, Copy, Image as ImageIcon, Share2, Plus, Trash2, Upload, CreditCard } from "lucide-react";
 import { toPng, toBlob } from 'html-to-image';
 import { useRef } from 'react';
 
@@ -138,6 +139,20 @@ export default function Fees() {
   if (view === "menu") {
     return (
       <div className="max-w-md mx-auto bg-white rounded-lg shadow-md p-6 flex flex-col space-y-4">
+        <Link
+          to="/admin/bulk-fee"
+          className="bg-emerald-600 text-white py-3 px-6 rounded-md hover:bg-emerald-700 transition-colors font-bold text-center flex items-center justify-center gap-2 shadow-sm"
+        >
+          <Upload size={18} />
+          <span>Bulk Fee / பல்க் கட்டணம் (Excel)</span>
+        </Link>
+        <Link
+          to="/admin/collect-fee"
+          className="bg-blue-600 text-white py-3 px-6 rounded-md hover:bg-blue-700 transition-colors font-bold text-center flex items-center justify-center gap-2 shadow-sm"
+        >
+          <CreditCard size={18} />
+          <span>Collect Fee / கட்டணம் வசூலித்தல்</span>
+        </Link>
         <button
           onClick={() => setView("history")}
           className="bg-[#1e3a8a] text-white py-3 px-6 rounded-md hover:bg-blue-800 transition-colors font-medium text-center"

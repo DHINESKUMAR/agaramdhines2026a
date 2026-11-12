@@ -12,6 +12,7 @@ import Homework from "./pages/Admin/Homework";
 import Fees from "./pages/Admin/Fees";
 import FeeDefaulters from "./pages/Admin/FeeDefaulters";
 import CollectFee from "./pages/Admin/CollectFee";
+import BulkFee from "./pages/Admin/BulkFee";
 import Settings from "./pages/Admin/Settings";
 import Courses from "./pages/Admin/Courses";
 import CourseMaterials from "./pages/Admin/CourseMaterials";
@@ -91,6 +92,7 @@ export default function App() {
           <Route path="fees" element={<Fees />} />
           <Route path="fee-defaulters" element={<FeeDefaulters />} />
           <Route path="collect-fee" element={<CollectFee />} />
+          <Route path="bulk-fee" element={<BulkFee />} />
           <Route path="settings" element={<Settings />} />
           <Route path="courses" element={<Courses />} />
           <Route path="course-materials" element={<CourseMaterials />} />

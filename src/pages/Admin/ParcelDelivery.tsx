@@ -1046,8 +1046,8 @@ export default function ParcelDeliveryPage() {
             overflow: hidden !important;
           }
           @page {
-            size: auto;
-            margin: 6mm;
+            size: 210mm 297mm;
+            margin: 0;
           }
         }
       `}</style>
@@ -1383,6 +1383,17 @@ export default function ParcelDeliveryPage() {
               ))}
             </select>
 
+            {/* Primary: Bulk A4 Sheet Print (4 Receipts per A4 Sheet) */}
+            <button
+              onClick={() => setShowBulkPrintModal(true)}
+              disabled={filteredParcels.length === 0}
+              className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black px-4 py-2 rounded-xl text-xs transition-all shadow-md hover:shadow-emerald-600/30 disabled:opacity-50 cursor-pointer"
+              title="ஒரு A4 தாளில் 4 ரசீதுகள் வீதம் பல்க் பிரிண்ட் செய்ய (A4 Bundle Print)"
+            >
+              <Printer size={15} />
+              <span>A4 பண்டல் பிரிண்ட் (4 வீதம்) {selectedIds.length > 0 ? `(${selectedIds.length})` : `(${filteredParcels.length})`}</span>
+            </button>
+
             {/* Parcel List A4 Print Button */}
             <button
               onClick={() => setShowParcelReportModal(true)}
@@ -1390,19 +1401,19 @@ export default function ParcelDeliveryPage() {
               className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold px-3.5 py-2 rounded-xl text-xs transition-all shadow-sm disabled:opacity-50 cursor-pointer"
               title="அனுப்பப்பட்ட பட்டியலை A4 தாளில் பல்க் பிரிண்ட் செய்ய"
             >
-              <Printer size={15} />
-              <span>A4 பட்டியல் பிரிண்ட் {selectedIds.length > 0 ? `(${selectedIds.length})` : `(${filteredParcels.length})`}</span>
+              <FileText size={15} />
+              <span>பட்டியல் அறிக்கை (A4 List)</span>
             </button>
 
             {/* Excel Download Button */}
             <button
               onClick={handleExportParcelsExcel}
               disabled={filteredParcels.length === 0}
-              className="flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-3.5 py-2 rounded-xl text-xs transition-all shadow-sm disabled:opacity-50 cursor-pointer"
+              className="flex items-center gap-1.5 bg-emerald-800 hover:bg-emerald-900 text-white font-bold px-3.5 py-2 rounded-xl text-xs transition-all shadow-sm disabled:opacity-50 cursor-pointer"
               title="டிரேக்கிங், ரோல் எண், பெயர், முகவரி, தேதி, நிலை அடங்கிய எக்செல் (.xlsx) கோப்பை பதிவிறக்க"
             >
               <FileSpreadsheet size={15} />
-              <span>Excel பதிவிறக்கு</span>
+              <span>Excel</span>
             </button>
 
             {/* PDF Download Button */}
@@ -1412,19 +1423,8 @@ export default function ParcelDeliveryPage() {
               className="flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold px-3.5 py-2 rounded-xl text-xs transition-all shadow-sm disabled:opacity-50 cursor-pointer"
               title="டிரேக்கிங், ரோல் எண், பெயர், முகவரி, தேதி, நிலை அடங்கிய PDF கோப்பை பதிவிறக்க"
             >
-              <FileText size={15} />
-              <span>PDF பதிவிறக்கு</span>
-            </button>
-
-            {/* Bulk A4 Sheet Print Button */}
-            <button
-              onClick={() => setShowBulkPrintModal(true)}
-              disabled={filteredParcels.length === 0}
-              className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-900 text-white font-bold px-3.5 py-2 rounded-xl text-xs transition-all shadow-sm disabled:opacity-50 cursor-pointer"
-              title="ஒரு A4 தாளில் 4 ரசீதுகள் வீதம் அச்சிட அல்லது PDF சேமிக்க"
-            >
-              <Printer size={15} />
-              <span>A4-ல் 4 ரசீதுகள் பல்க் {selectedIds.length > 0 ? `(${selectedIds.length})` : `(${filteredParcels.length})`}</span>
+              <Download size={15} />
+              <span>PDF</span>
             </button>
           </div>
         </div>
@@ -1435,6 +1435,14 @@ export default function ParcelDeliveryPage() {
               {selectedIds.length} பார்சல்கள் தெரிவு செய்யப்பட்டுள்ளன
             </span>
             <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => setShowBulkPrintModal(true)}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-black px-3 py-1.5 rounded-lg flex items-center gap-1.5 text-xs transition-colors shadow-xs cursor-pointer"
+                title="தெரிவு செய்யப்பட்ட பார்சல்களை 4 ரசீதுகள் வீதம் A4 தாளில் பல்க் பிரிண்ட் செய்ய"
+              >
+                <Printer size={13} />
+                A4 பண்டல் பிரிண்ட் ({selectedIds.length})
+              </button>
               <button
                 onClick={handleExportParcelsExcel}
                 className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-2.5 py-1 rounded-lg flex items-center gap-1 text-xs transition-colors cursor-pointer"

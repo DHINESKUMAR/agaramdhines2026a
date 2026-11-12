@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { Link } from "react-router-dom";
 import { getStudents, saveStudents, getFees, saveFees, getClasses, getAdminSettings, getSubjects } from "../../lib/db";
-import { Search, Calendar, CreditCard, User, BookOpen, DollarSign, CheckCircle, Printer, Download, Copy, FileText, Image as ImageIcon, Share2, Plus, Trash2, CheckSquare, Square } from "lucide-react";
+import { Search, Calendar, CreditCard, User, BookOpen, DollarSign, CheckCircle, Printer, Download, Copy, FileText, Image as ImageIcon, Share2, Plus, Trash2, CheckSquare, Square, Upload } from "lucide-react";
 import { toPng, toBlob } from 'html-to-image';
 import jsPDF from 'jspdf';
 import { checkObjectMatchesPhone } from '../../lib/phoneUtils';
@@ -818,26 +819,37 @@ export default function CollectFee() {
           </div>
         </div>
 
-        {selectedStudent && (
-          <div className="flex items-center gap-3 bg-blue-50/80 border border-blue-200/80 px-4 py-2 rounded-xl">
-            <div className="w-8 h-8 rounded-full bg-blue-600 text-white font-black text-xs flex items-center justify-center shadow-xs">
-              {selectedStudent.name.charAt(0)}
+        <div className="flex items-center gap-2 flex-wrap">
+          <Link
+            to="/admin/bulk-fee"
+            className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black px-3.5 py-2 rounded-xl text-xs transition-all shadow-sm cursor-pointer"
+            title="Excel மூலம் பல்க்காக மாணவர் கட்டணங்களைப் பதிய"
+          >
+            <Upload size={15} />
+            <span>பல்க் கட்டணம் (Bulk Fee)</span>
+          </Link>
+
+          {selectedStudent && (
+            <div className="flex items-center gap-3 bg-blue-50/80 border border-blue-200/80 px-4 py-2 rounded-xl">
+              <div className="w-8 h-8 rounded-full bg-blue-600 text-white font-black text-xs flex items-center justify-center shadow-xs">
+                {selectedStudent.name.charAt(0)}
+              </div>
+              <div>
+                <p className="text-xs font-black text-slate-800 leading-tight">{selectedStudent.name}</p>
+                <p className="text-[11px] text-blue-600 font-bold">
+                  Roll: {selectedStudent.rollNo || "N/A"} • Class: {selectedStudent.grade}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedStudent(null)}
+                className="ml-2 text-xs font-bold text-blue-700 hover:text-blue-900 bg-white hover:bg-blue-100 px-2.5 py-1 rounded-lg border border-blue-200 transition-colors cursor-pointer"
+              >
+                மாற்று (Change)
+              </button>
             </div>
-            <div>
-              <p className="text-xs font-black text-slate-800 leading-tight">{selectedStudent.name}</p>
-              <p className="text-[11px] text-blue-600 font-bold">
-                Roll: {selectedStudent.rollNo || "N/A"} • Class: {selectedStudent.grade}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setSelectedStudent(null)}
-              className="ml-2 text-xs font-bold text-blue-700 hover:text-blue-900 bg-white hover:bg-blue-100 px-2.5 py-1 rounded-lg border border-blue-200 transition-colors cursor-pointer"
-            >
-              மாற்று (Change)
-            </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Main Content Layout: Landscape 3-Column Grid on Desktop, Stacked on Mobile */}

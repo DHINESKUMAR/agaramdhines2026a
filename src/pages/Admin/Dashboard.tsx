@@ -151,7 +151,8 @@ export default function AdminDashboard() {
         { name: "Manage Fees", path: "/admin/fees" },
         { name: "Collect Fee", path: "/admin/collect-fee" },
         { name: "Fee Defaulters", path: "/admin/fee-defaulters" },
-        { name: "Fee Statement", path: "/admin/student-fee-statement" }
+        { name: "Fee Statement", path: "/admin/student-fee-statement" },
+        { name: "Bulk Fee (பல்க் கட்டணம்)", path: "/admin/bulk-fee" }
       ]
     },
     { 
